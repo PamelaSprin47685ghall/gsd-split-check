@@ -33,8 +33,13 @@ function createResponseWaiter() {
     pending.clear();
   }
 
+  const MAX_BUFFER_SIZE = 16 * 1024 * 1024;
+
   function parseMessages(chunk, onMessage) {
     buffer = Buffer.concat([buffer, chunk]);
+    if (buffer.length > MAX_BUFFER_SIZE) {
+      throw new Error("MCP message buffer exceeded 16 MiB limit");
+    }
 
     while (true) {
       const headerEnd = buffer.indexOf("\r\n\r\n");
@@ -48,6 +53,9 @@ function createResponseWaiter() {
 
       const bodyStart = headerEnd + 4;
       const bodyLength = Number(lengthMatch[1]);
+      if (!Number.isFinite(bodyLength) || bodyLength < 0 || bodyLength > MAX_BUFFER_SIZE) {
+        throw new Error(`Invalid MCP Content-Length: ${lengthMatch[1]}`);
+      }
       const bodyEnd = bodyStart + bodyLength;
       if (buffer.length < bodyEnd) return;
 
@@ -151,7 +159,17 @@ export async function callWorkflowTool({
     return result;
   } finally {
     try {
+      proc.stdin.end();
+    } catch {
+      // stdin may already be closed
+    }
+    try {
       proc.kill("SIGTERM");
+      setTimeout(() => {
+        if (proc.exitCode === null && proc.signalCode === null) {
+          try { proc.kill("SIGKILL"); } catch { /* ignore */ }
+        }
+      }, 2000);
     } catch {
       // best effort
     }

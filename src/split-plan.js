@@ -77,8 +77,9 @@ function nextTaskIdFactory(tasksDir, fallbackTaskId) {
   const existing = readExistingTaskNumbers(tasksDir);
   const currentNumber = Number((fallbackTaskId.match(/^(?:T)(\d+)$/i)?.[1] ?? "0"));
   const maxExisting = existing.length > 0 ? Math.max(...existing) : 0;
-  const width = Math.max(2, (fallbackTaskId.match(/^(?:T)(\d+)$/i)?.[1] ?? "00").length, String(maxExisting).length);
-  let nextNumber = Math.max(currentNumber, maxExisting) + 1;
+  const safeMax = Number.isFinite(maxExisting) ? maxExisting : 0;
+  const width = Math.max(2, (fallbackTaskId.match(/^(?:T)(\d+)$/i)?.[1] ?? "00").length, String(safeMax).length);
+  let nextNumber = Math.max(currentNumber, safeMax) + 1;
 
   return () => formatTaskId(nextNumber++, width);
 }
@@ -107,10 +108,10 @@ function extractPlanSections(planContent) {
   let match;
   const indices = [];
   while ((match = regex.exec(body)) !== null) {
-    indices.push({ title: match[1].trim(), index: match.index });
+    indices.push({ title: match[1].trim(), index: match.index, matchLength: match[0].length });
   }
   for (let i = 0; i < indices.length; i++) {
-    const start = indices[i].index + indices[i].title.length + 3;
+    const start = indices[i].index + indices[i].matchLength;
     const end = i + 1 < indices.length ? indices[i + 1].index : body.length;
     sections[indices[i].title.toLowerCase()] = body.slice(start, end).trim();
   }
@@ -136,21 +137,23 @@ function pickSection(sections, ...keys) {
 function buildFallbackTask({ currentTaskId, currentTaskTitle, currentTaskPlanContent }) {
   const { sections } = extractPlanSections(currentTaskPlanContent);
 
-  const estimate = pickSection(sections, "估计", "estimate") || "15m";
+  const estimate = pickSection(sections, "估计", "estimate") || "";
   const files = parseList(pickSection(sections, "文件", "files"));
   const inputs = parseList(pickSection(sections, "输入", "inputs"));
   const expectedOutput = parseList(pickSection(sections, "输出", "expected output", "outputs"));
-  const verify = pickSection(sections, "验证", "verification") || "npm test";
+  const verify = pickSection(sections, "验证", "verification") || "";
+  const observabilityImpact = pickSection(sections, "observability impact", "可观测性影响") || "";
 
   return {
     taskId: currentTaskId,
     title: currentTaskTitle,
     description: "[SPLIT-FALLBACK] 原任务已拆分为子任务。请在所有子任务完成后执行验收与集成。",
     estimate,
-    files: files.length > 0 ? files : ["src/"],
+    files: files.length > 0 ? files : [],
     verify,
     inputs: inputs.length > 0 ? inputs : [],
     expectedOutput: expectedOutput.length > 0 ? expectedOutput : [],
+    observabilityImpact: observabilityImpact || undefined,
   };
 }
 

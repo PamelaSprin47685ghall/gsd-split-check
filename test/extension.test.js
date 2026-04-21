@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -21,16 +21,17 @@ function createPiStub() {
   };
 }
 
-function withTempProject(callback) {
+async function withTempProject(callback) {
   const projectDir = mkdtempSync(join(tmpdir(), "gsd-split-check-"));
   mkdirSync(join(projectDir, ".gsd", "milestones", "M001", "slices", "S02", "tasks"), { recursive: true });
 
   const previousCwd = process.cwd();
   process.chdir(projectDir);
   try {
-    return callback({ projectDir });
+    return await callback({ projectDir });
   } finally {
     process.chdir(previousCwd);
+    try { rmSync(projectDir, { recursive: true, force: true }); } catch { /* ignore */ }
   }
 }
 
