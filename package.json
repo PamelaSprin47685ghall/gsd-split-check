@@ -1,0 +1,36 @@
+{
+  "name": "gsd-split-check",
+  "version": "0.1.0",
+  "description": "GSD split-check extension that pauses execute-task turns until the task is decomposed or approved for execution.",
+  "type": "module",
+  "main": "index.js",
+  "exports": "./index.js",
+  "keywords": [
+    "gsd",
+    "pi",
+    "extension",
+    "plugin",
+    "split-check"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PamelaSprin47685ghall/gsd-split-check.git"
+  },
+  "bugs": {
+    "url": "https://github.com/PamelaSprin47685ghall/gsd-split-check/issues"
+  },
+  "homepage": "https://github.com/PamelaSprin47685ghall/gsd-split-check#readme",
+  "files": [
+    "index.js",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ],
+  "pi": {
+    "extensions": ["./index.js"]
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
