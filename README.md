@@ -1,19 +1,17 @@
 # gsd-split-check
 
-Standalone GSD split-check extension.
+A small GSD extension that turns `execute-task` into a split-check gate before implementation begins.
 
-## What it does
+## Runtime flow
 
-This extension pauses `execute-task` turns and asks the agent to decide whether the current task should be decomposed into a smaller sub-DAG first.
+1. `before_agent_start` looks for the `## UNIT: Execute Task ...` header in the current turn.
+2. If the target task plan does not yet contain `split_check_done: true`, the extension arms the turn and appends a focused split-check system prompt.
+3. `agent_end` inspects the assistant response for `split_check_done: true`.
+4. If the marker is present, the extension writes `split_check_done: true` into the task plan frontmatter and clears the transient turn state.
 
-If the assistant returns `split_check_done: true`, the extension marks the task plan as checked and lets the task continue on the next turn.
+## What it persists
 
-## Workflow
-
-- `before_agent_start` inspects the current task plan.
-- If the task has not been split-checked yet, the extension injects a split-check prompt.
-- `agent_end` looks for `split_check_done: true` in the assistant response.
-- When the marker is present, the extension updates the task plan frontmatter.
+The extension keeps only a transient in-memory turn state while a split-check is active. The durable signal is the task plan frontmatter, which becomes the source of truth after the check passes.
 
 ## Split model
 
@@ -29,7 +27,7 @@ E1: "Implement user system"
 
 Rules:
 
-- Spawn sub-tasks only after the split-check step says the task should be split.
+- Split only after the split-check step says the task should be split.
 - Sub-tasks may declare dependencies on each other.
 - The original task stays in place and comes back as the final integration check.
 - Once all sub-tasks are complete, the original task runs again to verify the combined result.
@@ -49,9 +47,19 @@ Or install from a local checkout:
 gsd install /home/kunweiz/Desktop/gsd-split-check
 ```
 
-## Layout
+## Project layout
 
-- `index.js` — extension entry point
-- `package.json` — package metadata and pi manifest
-- `README.md` — usage and install notes
-- `LICENSE` — MIT license
+- `index.js` — package entry point that re-exports the extension
+- `src/extension.js` — hook registration and turn lifecycle wiring
+- `src/frontmatter.js` — task plan frontmatter helpers
+- `src/prompt.js` — split-check prompt builder and completion detection
+- `src/state.js` — transient turn state
+- `src/unit.js` — `execute-task` prompt parser and plan-path resolver
+- `src/task-plan.js` — plan file I/O
+- `test/` — node:test coverage for parser, persistence, and lifecycle hooks
+
+## Development
+
+```bash
+npm test
+```
