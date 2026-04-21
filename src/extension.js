@@ -1,10 +1,13 @@
 import { assistantMarkedSplitCheckDone, buildSplitCheckSystemPrompt } from "./prompt.js";
 import { documentHasBoolean, setBooleanFrontmatter } from "./frontmatter.js";
 import { MARKER_KEY } from "./constants.js";
-import { armSplitCheck, clearSplitCheckState, getArmedSplitCheck, isSplitCheckArmedFor } from "./state.js";
+import { armSplitCheck, clearSplitCheckState, getArmedSplitCheck } from "./state.js";
 import { logSplitCheck } from "./log.js";
 import { parseExecuteTaskUnit, resolveTaskPlanPath, formatUnitLabel } from "./unit.js";
 import { readTaskPlan, writeTaskPlan } from "./task-plan.js";
+import { parseSplitCheckResponse, buildSplitPlanToolArgs } from "./split-plan.js";
+import { callWorkflowTool } from "./workflow-mcp-client.js";
+import { dirname, join } from "node:path";
 
 function extractAssistantText(messages) {
   const parts = [];
@@ -54,7 +57,30 @@ function shouldPersistSplitCheck(assistantText) {
   return assistantMarkedSplitCheckDone(assistantText);
 }
 
-export default function registerSplitCheckExtension(pi) {
+async function executeSplitPlan(armed, splitPlan) {
+  const tasksDir = join(dirname(armed.planPath), "tasks");
+  const currentPlan = readTaskPlan(armed.planPath);
+  const toolArgs = buildSplitPlanToolArgs({
+    projectDir: process.cwd(),
+    milestoneId: armed.unit.milestoneId,
+    sliceId: armed.unit.sliceId,
+    currentTaskId: armed.unit.taskId,
+    currentTaskTitle: armed.unit.taskTitle,
+    currentTaskPlanContent: currentPlan?.content ?? "",
+    tasksDir,
+    splitPlan,
+  });
+
+  return await callWorkflowTool({
+    projectRoot: process.cwd(),
+    toolName: "gsd_plan_slice",
+    toolArgs,
+  });
+}
+
+export default function registerSplitCheckExtension(pi, options = {}) {
+  const invokeSplitPlan = options.invokeSplitPlan ?? executeSplitPlan;
+
   pi.on("session_start", async () => {
     resetTurnState();
   });
@@ -82,8 +108,23 @@ export default function registerSplitCheckExtension(pi) {
 
     try {
       const assistantText = extractAssistantText(event.messages);
-      if (!shouldPersistSplitCheck(assistantText)) {
-        logSplitCheck(`did not observe ${MARKER_KEY}: true for ${formatUnitLabel(armed.unit)}`);
+      const parsed = parseSplitCheckResponse(assistantText);
+
+      if (parsed.splitNeeded === true) {
+        if (!parsed.splitPlan) {
+          if (!shouldPersistSplitCheck(assistantText)) {
+            logSplitCheck(`split_needed true but no split_plan block for ${formatUnitLabel(armed.unit)}`);
+            return undefined;
+          }
+          logSplitCheck(`split_needed true without split_plan for ${formatUnitLabel(armed.unit)} — falling back to completion marker`);
+        } else {
+          await invokeSplitPlan(armed, parsed.splitPlan);
+          logSplitCheck(`applied direct split plan for ${formatUnitLabel(armed.unit)}`);
+        }
+      } else if (parsed.splitNeeded === false || shouldPersistSplitCheck(assistantText)) {
+        logSplitCheck(`no split needed for ${formatUnitLabel(armed.unit)}`);
+      } else {
+        logSplitCheck(`did not observe split check completion for ${formatUnitLabel(armed.unit)}`);
         return undefined;
       }
 

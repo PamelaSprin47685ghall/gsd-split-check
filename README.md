@@ -6,8 +6,9 @@ A small GSD extension that turns `execute-task` into a split-check gate before i
 
 1. `before_agent_start` looks for the `## UNIT: Execute Task ...` header in the current turn.
 2. If the target task plan does not yet contain `split_check_done: true`, the extension arms the turn and appends a focused split-check system prompt.
-3. `agent_end` inspects the assistant response for `split_check_done: true`.
-4. If the marker is present, the extension writes `split_check_done: true` into the task plan frontmatter and clears the transient turn state.
+3. `agent_end` reads the assistant response, looking for `split_needed: true|false` plus an optional `split_plan` JSON block.
+4. If a split is needed, the extension assigns task IDs, calls the host workflow MCP tool `gsd_plan_slice` directly, and then writes `split_check_done: true` into the task plan frontmatter.
+5. If no split is needed, the extension only writes `split_check_done: true` into the task plan frontmatter.
 
 ## What it persists
 
